@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Template to create Lambda function triggered by S3 events via EventBridge'
+
+Parameters:
+  EventBusName:
+    Type: String
+    Description: 'Name of the EventBridge bus'
+  S3BucketName:
+    Type: String
+    Description: 'Name of the S3 bucket'
+
+Resources:
+  MyLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: 'nested-sam-app-1-function'
+      CodeUri: ./src/
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref S3BucketName
+      Events:
+        S3ObjectCreated:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref EventBusName
+            Pattern:
+              source:
+                - aws.s3
+              detail-type:
+                - 'Object Created'
+              detail:
+                bucket:
+                  name:
+                    - !Ref S3BucketName
+
+Outputs:
+  LambdaFunctionArn:
+    Description: 'ARN of the created Lambda function'
+    Value: !GetAtt MyLambdaFunction.Arn

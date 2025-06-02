@@ -1,0 +1,67 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Template to create S3 bucket and EventBridge bus'
+
+Resources:
+  MyS3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub 'nested-sam-app-1-s3-${AWS::AccountId}-${AWS::Region}'
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+
+  MyEventBus:
+    Type: 'AWS::Events::EventBus'
+    Properties:
+      Name: 'nested-sam-app-1-event-bus'
+
+  # Add new rule to default event bus that forward PutObject events from default bus to custom bus
+  ForwardS3PutObjectRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      EventBusName: 'default'  # This specifies the default event bus
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - 'Object Created'
+        detail:
+          bucket:
+            name:
+              - !Ref MyS3Bucket
+      State: 'ENABLED'
+      Targets:
+        - Arn: !GetAtt MyEventBus.Arn
+          Id: "ForwardToMyS3EventBus"
+          RoleArn: !GetAtt ForwardEventRole.Arn
+
+  # IAM role to allow EventBridge to put events on the custom bus
+  ForwardEventRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: 'nested-sam-app-1-allow-put-event-to-bus'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'events:PutEvents'
+                Resource: !GetAtt MyEventBus.Arn
+
+Outputs:
+  S3BucketName:
+    Description: 'Name of the created S3 bucket'
+    Value: !Ref MyS3Bucket
+  EventBusName:
+    Description: 'Name of the created EventBridge bus'
+    Value: !Ref MyEventBus
+  EventBusArn:
+    Description: 'ARN of the created EventBridge bus'
+    Value: !GetAtt MyEventBus.Arn

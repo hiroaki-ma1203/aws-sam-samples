@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Root template that nests S3/EventBridge and Lambda templates'
+
+Resources:
+  S3EventBridgeStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: s3-eventbridge-template.yaml
+      
+  LambdaStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: lambda-template.yaml
+      Parameters:
+        EventBusName: !GetAtt S3EventBridgeStack.Outputs.EventBusName
+        S3BucketName: !GetAtt S3EventBridgeStack.Outputs.S3BucketName
+    DependsOn: S3EventBridgeStack
+
+Outputs:
+  S3BucketName:
+    Description: 'Name of the created S3 bucket'
+    Value: !GetAtt S3EventBridgeStack.Outputs.S3BucketName
+  EventBusName:
+    Description: 'Name of the created EventBridge bus'
+    Value: !GetAtt S3EventBridgeStack.Outputs.EventBusName
+  LambdaFunctionArn:
+    Description: 'ARN of the created Lambda function'
+    Value: !GetAtt LambdaStack.Outputs.LambdaFunctionArn
