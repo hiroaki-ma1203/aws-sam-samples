@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Template to create Lambda function triggered by S3 events via EventBridge'
+
+Parameters:
+  Prefix:
+    Type: String
+  EventBusName:
+    Type: String
+    Description: 'Name of the EventBridge bus'
+  InputBucketName:
+    Type: String
+    Description: 'Name of the S3 bucket for input'
+  OutputBucketName:
+    Type: String
+    Description: 'Name of the S3 bucket for output'
+
+Resources:
+  # Dead Letter Queue for Lambda function
+  LambdaDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${Prefix}-lambda-dlq'
+      MessageRetentionPeriod: 1209600  # 14days (1209600 seconds)
+
+  # CloudWatch Logs LogGroup with deletion policy
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${Prefix}-function'
+      RetentionInDays: 30
+
+  # Lambda function that processes S3 events
+  MyLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${Prefix}-function'
+      CodeUri: ./src/
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          OUTPUT_BUCKET_NAME: !Ref OutputBucketName
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt LambdaDeadLetterQueue.Arn
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref InputBucketName
+        - S3WritePolicy:
+            BucketName: !Ref OutputBucketName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt LambdaDeadLetterQueue.QueueName
+      Events:
+        S3ObjectCreated:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref EventBusName
+            Pattern:
+              source:
+                - aws.s3
+              detail-type:
+                - 'Object Created'
+              detail:
+                bucket:
+                  name:
+                    - !Ref InputBucketName
+
+Outputs:
+  LambdaFunctionArn:
+    Description: 'ARN of the created Lambda function'
+    Value: !GetAtt MyLambdaFunction.Arn
+  DeadLetterQueueUrl:
+    Description: 'URL of the Dead Letter Queue'
+    Value: !Ref LambdaDeadLetterQueue
+  DeadLetterQueueArn:
+    Description: 'ARN of the Dead Letter Queue'
+    Value: !GetAtt LambdaDeadLetterQueue.Arn

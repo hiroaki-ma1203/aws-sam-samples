@@ -1,0 +1,106 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Template to create SNS topic and EventBridge rule for S3 event notifications'
+
+Parameters:
+  Prefix:
+    Type: String
+  EventBusName:
+    Type: String
+    Description: 'Name of the EventBridge bus'
+  OutputBucketName:
+    Type: String
+    Description: 'Name of the S3 bucket for output'
+  EmailAddress:
+    Type: String
+    Description: 'Email address to subscribe to the SNS topic'
+    Default: ''
+
+Resources:
+  # Dead Letter Queue for SNS
+  SnsDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${Prefix}-sns-dlq'
+      MessageRetentionPeriod: 1209600  # 14days (1209600 seconds)
+
+  # SNS Topic for notifications
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${Prefix}-sns-topic'
+
+  # Email subscription (only created if EmailAddress is provided)
+  EmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasEmailAddress
+    Properties:
+      Protocol: email
+      Endpoint: !Ref EmailAddress
+      TopicArn: !Ref SNSTopic
+
+  # EventBridge rule to trigger SNS when objects are created in output bucket
+  OutputBucketEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref EventBusName
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - 'Object Created'
+        detail:
+          bucket:
+            name:
+              - !Ref OutputBucketName
+      State: 'ENABLED'
+      Targets:
+        - Arn: !Ref SNSTopic
+          Id: "SendToSNS"
+          RoleArn: !GetAtt EventBridgeSnsRole.Arn
+          InputTransformer:
+            InputPathsMap:
+              bucket: "$.detail.bucket.name"
+              object: "$.detail.object.key"
+              time: "$.time"
+            InputTemplate: |
+              {
+                "bucket": <bucket>,
+                "object": <object>,
+                "time": <time>,
+                "message": "Object created in output bucket"
+              }
+
+  # IAM role for EventBridge to publish to SNS
+  EventBridgeSnsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: !Sub '${Prefix}-allow-publish-to-sns'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'sns:Publish'
+                Resource: !Ref SNSTopic
+
+Conditions:
+  HasEmailAddress: !Not [!Equals [!Ref EmailAddress, '']]
+
+Outputs:
+  SNSTopicArn:
+    Description: 'ARN of the created SNS topic'
+    Value: !Ref SNSTopic
+  DeadLetterQueueUrl:
+    Description: 'URL of the Dead Letter Queue'
+    Value: !Ref SnsDeadLetterQueue
+  DeadLetterQueueArn:
+    Description: 'ARN of the Dead Letter Queue'
+    Value: !GetAtt SnsDeadLetterQueue.Arn
