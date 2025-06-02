@@ -1,22 +1,42 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Template to create S3 bucket and EventBridge bus'
 
+Parameters:
+  Prefix:
+    Type: String
+
 Resources:
-  MyS3Bucket:
+  InputBucket:
     Type: 'AWS::S3::Bucket'
     Properties:
-      BucketName: !Sub 'nested-sam-app-1-s3-${AWS::AccountId}-${AWS::Region}'
+      BucketName: !Sub '${Prefix}-s3-${AWS::AccountId}-${AWS::Region}-input'
       NotificationConfiguration:
         EventBridgeConfiguration:
           EventBridgeEnabled: true
 
+  OutputBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${Prefix}-s3-${AWS::AccountId}-${AWS::Region}-output'
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+
+  # EventBridge bus
   MyEventBus:
     Type: 'AWS::Events::EventBus'
     Properties:
-      Name: 'nested-sam-app-1-event-bus'
+      Name: !Sub '${Prefix}-event-bus'
+
+  # Dead Letter Queue for EventBridge rules
+  EventsDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${Prefix}-events-dlq'
+      MessageRetentionPeriod: 1209600  # 14 days
 
   # Add new rule to default event bus that forward PutObject events from default bus to custom bus
-  ForwardS3PutObjectRule:
+  InputBucketEventRule:
     Type: 'AWS::Events::Rule'
     Properties:
       EventBusName: 'default'  # This specifies the default event bus
@@ -28,12 +48,35 @@ Resources:
         detail:
           bucket:
             name:
-              - !Ref MyS3Bucket
+              - !Ref InputBucket
       State: 'ENABLED'
       Targets:
         - Arn: !GetAtt MyEventBus.Arn
-          Id: "ForwardToMyS3EventBus"
+          Id: "ForwardInputBucketEvent"
           RoleArn: !GetAtt ForwardEventRole.Arn
+          DeadLetterConfig:
+            Arn: !GetAtt EventsDLQ.Arn
+
+  OutputBucketEventRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      EventBusName: 'default'  # This specifies the default event bus
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - 'Object Created'
+        detail:
+          bucket:
+            name:
+              - !Ref OutputBucket
+      State: 'ENABLED'
+      Targets:
+        - Arn: !GetAtt MyEventBus.Arn
+          Id: "ForwardOutputBucketEvent"
+          RoleArn: !GetAtt ForwardEventRole.Arn
+          DeadLetterConfig:
+            Arn: !GetAtt EventsDLQ.Arn
 
   # IAM role to allow EventBridge to put events on the custom bus
   ForwardEventRole:
@@ -47,21 +90,40 @@ Resources:
               Service: events.amazonaws.com
             Action: 'sts:AssumeRole'
       Policies:
-        - PolicyName: 'nested-sam-app-1-allow-put-event-to-bus'
+        - PolicyName: !Sub '${Prefix}-allow-put-event-to-bus'
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action: 'events:PutEvents'
                 Resource: !GetAtt MyEventBus.Arn
+        - PolicyName: !Sub '${Prefix}-allow-sqs-send-message'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'sqs:SendMessage'
+                Resource: !GetAtt EventsDLQ.Arn
 
 Outputs:
-  S3BucketName:
-    Description: 'Name of the created S3 bucket'
-    Value: !Ref MyS3Bucket
+  InputBucketName:
+    Description: 'Name of the created S3 bucket for input'
+    Value: !Ref InputBucket
+  OutputBucketName:
+    Description: 'Name of the created S3 bucket for output'
+    Value: !Ref OutputBucket
   EventBusName:
     Description: 'Name of the created EventBridge bus'
     Value: !Ref MyEventBus
   EventBusArn:
     Description: 'ARN of the created EventBridge bus'
     Value: !GetAtt MyEventBus.Arn
+  InputBucketEventRuleArn:
+    Description: 'ARN of the created EventBridge rule'
+    Value: !GetAtt InputBucketEventRule.Arn
+  OutputBucketEventRuleArn:
+    Description: 'ARN of the created EventBridge rule'
+    Value: !GetAtt OutputBucketEventRule.Arn
+  EventsDLQArn:
+    Description: 'ARN of the Dead Letter Queue for EventBridge rules'
+    Value: !GetAtt EventsDLQ.Arn

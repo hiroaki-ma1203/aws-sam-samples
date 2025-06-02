@@ -1,29 +1,60 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: 'Root template that nests S3/EventBridge and Lambda templates'
+Description: 'Root template that nests S3, EventBridge, Lambda and SNS templates'
+
+Parameters:
+  Prefix:
+    Type: String
+    Default: nested-sam-app-2
+    Description: Resource name prefix
+  EmailAddress:
+    Type: String
+    Description: 'Email address to subscribe to the SNS topic'
+    Default: ''
 
 Resources:
   S3EventBridgeStack:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: s3-eventbridge-template.yaml
+      Parameters:
+        Prefix: !Ref Prefix
       
-  LambdaStack:
+  LambdaProcessingStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: lambda-template.yaml
+      TemplateURL: lambda-processing-template.yaml
       Parameters:
+        Prefix: !Ref Prefix
         EventBusName: !GetAtt S3EventBridgeStack.Outputs.EventBusName
-        S3BucketName: !GetAtt S3EventBridgeStack.Outputs.S3BucketName
+        InputBucketName: !GetAtt S3EventBridgeStack.Outputs.InputBucketName
+        OutputBucketName: !GetAtt S3EventBridgeStack.Outputs.OutputBucketName
+    DependsOn: S3EventBridgeStack
+
+  SNSEventNotificationStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: sns-template.yaml
+      Parameters:
+        Prefix: !Ref Prefix
+        EventBusName: !GetAtt S3EventBridgeStack.Outputs.EventBusName
+        OutputBucketName: !GetAtt S3EventBridgeStack.Outputs.OutputBucketName
+        EmailAddress: !Ref EmailAddress
     DependsOn: S3EventBridgeStack
 
 Outputs:
-  S3BucketName:
-    Description: 'Name of the created S3 bucket'
-    Value: !GetAtt S3EventBridgeStack.Outputs.S3BucketName
+  InputBucketName:
+    Description: 'Name of the created S3 bucket for input'
+    Value: !GetAtt S3EventBridgeStack.Outputs.InputBucketName
+  OutputBucketName:
+    Description: 'Name of the created S3 bucket for output'
+    Value: !GetAtt S3EventBridgeStack.Outputs.OutputBucketName
   EventBusName:
     Description: 'Name of the created EventBridge bus'
     Value: !GetAtt S3EventBridgeStack.Outputs.EventBusName
   LambdaFunctionArn:
     Description: 'ARN of the created Lambda function'
-    Value: !GetAtt LambdaStack.Outputs.LambdaFunctionArn
+    Value: !GetAtt LambdaProcessingStack.Outputs.LambdaFunctionArn
+  SNSTopicArn:
+    Description: 'ARN of the created SNS topic'
+    Value: !GetAtt SNSEventNotificationStack.Outputs.SNSTopicArn
