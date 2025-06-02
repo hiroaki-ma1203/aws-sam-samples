@@ -14,6 +14,8 @@ The application consists of three SAM templates:
 
 ## Architecture
 
+![Architecture Diagram](docs/images/architecture.drawio.png)
+
 1. When a file is uploaded to the S3 bucket, it generates an event.
 2. The S3 event is sent to Amazon EventBridge.
 3. EventBridge routes the event based on the defined rule.

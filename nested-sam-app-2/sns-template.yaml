@@ -97,7 +97,7 @@ Conditions:
 Outputs:
   SNSTopicArn:
     Description: 'ARN of the created SNS topic'
-    Value: !GetAtt SNSTopic.Arn
+    Value: !Ref SNSTopic
   DeadLetterQueueUrl:
     Description: 'URL of the Dead Letter Queue'
     Value: !Ref SnsDeadLetterQueue

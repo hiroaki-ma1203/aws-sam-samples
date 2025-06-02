@@ -2,7 +2,7 @@ version = 0.1
 
 [default]
 [default.global.parameters]
-stack_name = "nested-sam-app-1"
+stack_name = "nested-sam-app-2"
 
 [default.build.parameters]
 cached = true
@@ -15,7 +15,7 @@ lint = true
 capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
 confirm_changeset = true
 resolve_s3 = true
-s3_prefix = "nested-sam-app"
+s3_prefix = "nested-sam-app-2"
 region = "ap-northeast-1"
 image_repositories = []
 

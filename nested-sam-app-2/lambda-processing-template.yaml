@@ -42,8 +42,8 @@ Resources:
       Timeout: 30
       MemorySize: 256
       Environment:
-      Variables:
-        OUTPUT_BUCKET_NAME: !Ref OutputBucketName
+        Variables:
+          OUTPUT_BUCKET_NAME: !Ref OutputBucketName
       DeadLetterQueue:
         Type: SQS
         TargetArn: !GetAtt LambdaDeadLetterQueue.Arn
